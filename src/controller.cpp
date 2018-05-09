@@ -1,30 +1,24 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
-#include "string.h"
 #include "Definitions.h"
+#include "epos_tutorial/realVel.h"
+#include "epos_tutorial/DesiredVel.h"
+#include <sstream>
 
 typedef void* HANDLE;
 typedef int BOOL;
 
-enum EAppMode
-{
-    AM_UNKNOWN,
-    AM_DEMO,
-    AM_INTERFACE_LIST,
-    AM_PROTOCOL_LIST,
-    AM_VERSION_INFO
-};
-
 using namespace std;
 
 void* g_pKeyHandle = 0;
-unsigned short g_usNodeId = 1;
+int vel[] = {0,0,0,0};
+unsigned short g_usNodeId[] = {1,2,3,4};
+int Id_length = sizeof(g_usNodeId)/sizeof(*g_usNodeId);
 string g_deviceName;
 string g_protocolStackName;
 string g_interfaceName;
 string g_portName;
 int g_baudrate = 0;
-EAppMode g_eAppMode = AM_DEMO;
 
 #ifndef MMC_SUCCESS
 #define MMC_SUCCESS 0
@@ -50,17 +44,20 @@ void SeparatorLine()
 
 void PrintSettings()
 {
-    stringstream msg;
+    std_msgs::String msg;
 
-    msg << "default settings:" << endl;
-    msg << "node id             = " << g_usNodeId << endl;
-    msg << "device name         = '" << g_deviceName << "'" << endl;
-    msg << "protocal stack name = '" << g_protocolStackName << "'" << endl;
-    msg << "interface name      = '" << g_interfaceName << "'" << endl;
-    msg << "port name           = '" << g_portName << "'"<< endl;
-    msg << "baudrate            = " << g_baudrate;
+    std::stringstream ss;
+    ss << endl;
 
-    ROS_INFO("%s",msg.str());
+    ss << "number of node      = " << Id_length << endl;
+    ss << "device name         = '" << g_deviceName << "'" << endl;
+    ss << "protocal stack name = '" << g_protocolStackName << "'" << endl;
+    ss << "interface name      = '" << g_interfaceName << "'" << endl;
+    ss << "port name           = '" << g_portName << "'"<< endl;
+    ss << "baudrate            = " << g_baudrate;
+
+    msg.data = ss.str();
+    ROS_INFO("%s",msg.data.c_str());
 
     SeparatorLine();
 }
@@ -68,8 +65,7 @@ void PrintSettings()
 void SetDefaultParameters()
 {
     //USB
-    g_usNodeId = 1;
-    g_deviceName = "EPOS2";
+    g_deviceName = "EPOS4";
     g_protocolStackName = "MAXON SERIAL V2";
     g_interfaceName = "USB";
     g_portName = "USB0";
@@ -108,7 +104,7 @@ int OpenDevice(unsigned int* p_pErrorCode)
                     if(g_baudrate==(int)lBaudrate)
                     {
                         lResult = MMC_SUCCESS;
-                        ROS_INFO("Success");
+                        ROS_INFO("Open device Success");
                     }
                 }
             }
@@ -127,24 +123,143 @@ int OpenDevice(unsigned int* p_pErrorCode)
     return lResult;
 }
 
-void commandCallback(const std_msgs::String::ConstPtr& msg)
+bool ProfileVelocityMode(HANDLE p_DeviceHandle, unsigned short p_usNodeId, unsigned int & p_rlErrorCode, long vel_d)
 {
-    ROS_INFO("command: [%s]", msg->data.c_str());
-    unsigned int ulErrorCode = 0;
-    SetDefaultParameters();
-//    PrintSettings();
-    OpenDevice(&ulErrorCode);
+    int lResult = MMC_SUCCESS;
+
+    ROS_INFO("move with target velocity : %ld rpm, node = %d", vel_d, p_usNodeId);
+
+    if(VCS_MoveWithVelocity(p_DeviceHandle, p_usNodeId, vel_d, &p_rlErrorCode) == 0)
+    {
+        lResult = MMC_FAILED;
+        ROS_INFO("VCS_MoveWithVelocity failed");
+    }
+
+    return lResult;
+}
+
+int PrepareDriver(unsigned short NodeId, unsigned int* p_pErrorCode)
+{
+    int lResult = MMC_SUCCESS;
+    BOOL oIsFault = 0;
+
+    if(VCS_GetFaultState(g_pKeyHandle, NodeId, &oIsFault, p_pErrorCode ) == 0)
+    {
+//        ROS_INFO("Device (node: %d) is in fault state", NodeId);
+        lResult = MMC_FAILED;
+    }
+
+    if(lResult==0)
+    {
+        if(oIsFault)
+        {
+//            ROS_INFO("Clear fault state (node: %d)", NodeId);
+            if(VCS_ClearFault(g_pKeyHandle, NodeId, p_pErrorCode) == 0)
+            {
+//                ROS_INFO("Clearing is failed")
+                lResult = MMC_FAILED;
+            }
+        }
+
+        if(lResult==0)
+        {
+            BOOL oIsEnabled = 0;
+
+            if(VCS_GetEnableState(g_pKeyHandle, NodeId, &oIsEnabled, p_pErrorCode) == 0)
+            {
+                lResult = MMC_FAILED;
+            }
+
+            if(lResult==0)
+            {
+                if(!oIsEnabled)
+                {
+                    if(VCS_SetEnableState(g_pKeyHandle, NodeId, p_pErrorCode) == 0)
+                    {
+                        ROS_INFO("Device (node: %d) is enabled", NodeId);
+                        lResult = MMC_FAILED;
+                    }
+                }
+            }
+        }
+    }
+    return lResult;
+}
+
+void commandCallback(const epos_tutorial::DesiredVel::ConstPtr& msg)
+{
+    int lResult = MMC_FAILED;
+    unsigned int lErrorCode = 0;
+
+    int64_t setVel[] = {msg->vel1, msg->vel2, msg->vel3, msg->vel4};
+    ROS_INFO("Desired velocity (rpm) = %ld, %ld, %ld, %ld", (long int)setVel[0], (long int)setVel[1], (long int)setVel[2], (long int)setVel[3]);
+
+    for (int i=0; i<Id_length;i++)
+    {
+        if((lResult = ProfileVelocityMode(g_pKeyHandle, g_usNodeId[i], lErrorCode, setVel[i])!=MMC_SUCCESS))
+        {
+            ROS_INFO("Velocity Control Failed node: %d", g_usNodeId[i]);
+        }
+    }
 }
 
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "controller");
-
     ros::NodeHandle n;
 
-    ros::Subscriber sub = n.subscribe("command", 1000, commandCallback);
+    int lResult = MMC_FAILED;
+    unsigned int ulErrorCode = 0;
+    SetDefaultParameters();
+    PrintSettings();
 
-    ros::spin();
+    if((lResult = OpenDevice(&ulErrorCode))!=MMC_SUCCESS)
+    {
+        ROS_INFO("OpenDevice Failed");
+    }
+
+    for (int i=0; i< Id_length;i++)
+    {
+        if((lResult = PrepareDriver(g_usNodeId[i], &ulErrorCode))!=MMC_SUCCESS)
+        {
+            ROS_INFO("PrepareDemo Failed node: %d", g_usNodeId[i]);
+            return 0;
+        }
+    }
+
+    for (int i=0; i<sizeof(g_usNodeId)/sizeof(*g_usNodeId);i++)
+    {
+        if(VCS_ActivateProfileVelocityMode(g_pKeyHandle, g_usNodeId[i], &ulErrorCode) == 0)
+        {
+            ROS_INFO("VCS_ActivateProfileVelocityMode node: %d Failed", g_usNodeId[i]);
+            lResult = MMC_FAILED;
+        }
+        VCS_SetVelocityProfile(g_pKeyHandle, g_usNodeId[i], 5000, 5000, &ulErrorCode);
+    }
+
+    ROS_INFO("Ready to control velocity");
+
+    ros::Subscriber sub = n.subscribe("command", 1000, commandCallback);
+//    ros::spin();
+    ros::Publisher measure_pub = n.advertise<epos_tutorial::realVel>("measure", 1000);
+    ros::Rate loop_rate(10);
+
+    while (ros::ok())
+    {
+        epos_tutorial::realVel msg;
+
+        for (int i=0; i<Id_length;i++)
+        {
+            VCS_GetVelocityIsAveraged(g_pKeyHandle, g_usNodeId[i], &vel[i], &ulErrorCode);
+            msg.realVel[i] = vel[i];
+        }
+
+        measure_pub.publish(msg);
+
+        ros::spinOnce();
+
+        loop_rate.sleep();
+    }
 
     return 0;
 }
