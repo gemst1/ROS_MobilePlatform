@@ -148,6 +148,10 @@ add_executable(controller src/controller.cpp)
 target_link_libraries(controller ${catkin_LIBRARIES} /opt/EposCmdLib_6.3.1.0/lib/x86_64/libEposCmd.so.6.3.1.0)
 add_dependencies(controller epos_tutorial_generate_messages_cpp)
 
+add_executable(controller_pdo src/controller_pdo.cpp)
+target_link_libraries(controller_pdo ${catkin_LIBRARIES})
+add_dependencies(controller_pdo epos_tutorial_generate_messages_cpp)
+
 add_executable(motor_sensor src/motor_sensor.cpp)
 target_link_libraries(motor_sensor ${catkin_LIBRARIES})
 add_dependencies(motor_sensor epos_tutorial_generate_messages_cpp)
