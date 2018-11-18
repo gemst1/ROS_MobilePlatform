@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  geometry_msgs
   message_generation
 )
 
@@ -75,6 +76,7 @@ add_service_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
+  geometry_msgs
 )
 
 ################################################
@@ -143,6 +145,10 @@ include_directories(
 add_executable(commander src/commander.cpp)
 target_link_libraries(commander ${catkin_LIBRARIES})
 add_dependencies(commander epos_tutorial_generate_messages_cpp)
+
+add_executable(vel_cmd_circle_fix src/vel_cmd_circle_fix.cpp)
+target_link_libraries(vel_cmd_circle_fix ${catkin_LIBRARIES})
+add_dependencies(vel_cmd_circle_fix epos_tutorial_generate_messages_cpp)
 
 add_executable(controller src/controller.cpp)
 target_link_libraries(controller ${catkin_LIBRARIES} /opt/EposCmdLib_6.3.1.0/lib/x86_64/libEposCmd.so.6.3.1.0)
