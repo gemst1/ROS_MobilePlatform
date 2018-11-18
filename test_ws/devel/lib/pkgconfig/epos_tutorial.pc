@@ -1,0 +1,8 @@
+prefix=/home/jeon/test_ws/devel
+
+Name: epos_tutorial
+Description: Description of epos_tutorial
+Version: 0.0.0
+Cflags: -I/home/jeon/test_ws/devel/include
+Libs: -L/home/jeon/test_ws/devel/lib 
+Requires: message_runtime

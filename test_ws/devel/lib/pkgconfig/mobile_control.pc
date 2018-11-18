@@ -1,0 +1,8 @@
+prefix=/home/jeon/test_ws/devel
+
+Name: mobile_control
+Description: Description of mobile_control
+Version: 0.0.0
+Cflags: -I/home/jeon/test_ws/devel/include
+Libs: -L/home/jeon/test_ws/devel/lib -lmobile_control
+Requires: roscpp rospy std_msgs

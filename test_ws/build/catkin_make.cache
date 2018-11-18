@@ -1,0 +1,2 @@
+epos_tutorial:mobile_control
+-DCATKIN_DEVEL_PREFIX=/home/jeon/test_ws/devel -DCMAKE_INSTALL_PREFIX=/home/jeon/test_ws/install -G Unix Makefiles
