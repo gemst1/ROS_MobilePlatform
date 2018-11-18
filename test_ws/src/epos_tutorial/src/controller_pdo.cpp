@@ -358,7 +358,7 @@ int main(int argc, char **argv)
 
     int nnbytes = 0;
     struct timeval tv;
-    tv.tv_sec = 1;
+    tv.tv_sec = 0;
     tv.tv_usec = 10;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
