@@ -356,6 +356,12 @@ int main(int argc, char **argv)
     canmsg.msg_flags = 0;
     sleep(1);
 
+    int nnbytes = 0;
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 10;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
     epos_tutorial::realVel msg;
 
     while (ros::ok())
@@ -374,9 +380,15 @@ int main(int argc, char **argv)
 	    //LogInfo("rtr write");
 	    //sleep(0.001);
             //sleep(0.01);
-	    ros::Duration(0.0005).sleep();
-            recvmsg(s,&canmsg, 0);
-            msg.realVel[i] = hexarray_to_int(frame_get.data);
+	        ros::Duration(0.0005).sleep();
+            nnbytes = recvmsg(s,&canmsg, 0);
+            if ((size_t )nnbytes != CAN_MTU && (size_t )nnbytes != CANFD_MTU){
+
+            }
+            else
+            {
+                msg.realVel[i] = hexarray_to_int(frame_get.data);
+            }
         }
 	
         measure_pub.publish(msg);
