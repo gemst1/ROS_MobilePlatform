@@ -9,3 +9,8 @@ sudo ifconfig slcan0 up
 - CAN Communication monitor
 
 candump slcan0
+
+
+--
+- Install slcan module to Raspberry Pi
+https://wiki.linklayer.com/index.php/CANtact_on_Raspberry_Pi
