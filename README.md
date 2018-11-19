@@ -12,5 +12,5 @@ candump slcan0
 
 
 ---------------------------------------------------------------------
-- Install slcan module to Raspberry Pi
+- Install slcan module to Raspberry Pi </br>
 https://wiki.linklayer.com/index.php/CANtact_on_Raspberry_Pi
