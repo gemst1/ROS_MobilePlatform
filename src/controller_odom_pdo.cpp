@@ -3,6 +3,11 @@
 #include "epos_tutorial/realVel.h"
 #include "mobile_control/motorMsg.h"
 #include <sstream>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_datatypes.h>
+#include "geometry_msgs/Twist.h"
+#include "nav_msgs/Odometry.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,6 +61,22 @@ string COB_ID_Rx2[][4] = {{"221", "321", "421", "521"},
                          {"1A2", "2A2", "3A2", "4A2"},
                          {"1A3", "2A3", "3A3", "4A3"},
                          {"1A4", "2A4", "3A4", "4A4"}};*/
+
+
+// platform param
+#define PI 3.14159265358979323846
+
+double wheel_radius = 0.076;
+double l = 0.5165;
+double gear_ratio = 73.5;
+double radps_to_rpm = 60.0 / 2.0 / PI;
+double rpm_to_radps = 2.0 * PI / 60;
+
+double linear_x_d = 0;
+double linear_y_d = 0;
+double angular_z_d = 0;
+
+
 
 
 
@@ -270,9 +291,91 @@ void commandCallback(const mobile_control::motorMsg::ConstPtr& msg)
     //LogInfo(ss.str());
 }
 
+// for odom
+
+tf::Transform getTransformForMotion(double linear_vel_x, double linear_vel_y, double angular_vel, double timeSeconds)
+{
+    tf::Transform tmp;
+    tmp.setIdentity();
+
+
+    if (abs(angular_vel) < 0.0001) {
+        //Drive straight
+        tmp.setOrigin(tf::Vector3(static_cast<double>(linear_vel_x*timeSeconds), static_cast<double>(linear_vel_y*timeSeconds), 0.0));
+    }
+    else
+    {
+        //Follow circular arc
+        double angleChange = angular_vel * timeSeconds;
+        double arcRadius_x = linear_vel_x * timeSeconds / angleChange;
+        double arcRadius_y = linear_vel_y * timeSeconds / angleChange;
+
+        tmp.setOrigin(tf::Vector3(sin(angleChange) * arcRadius_x + cos(angleChange) * arcRadius_y - arcRadius_y,
+                                  sin(angleChange) * arcRadius_y - cos(angleChange) * arcRadius_x + arcRadius_x,
+                                  0.0));
+        tmp.setRotation(tf::createQuaternionFromYaw(angleChange));
+    }
+
+    return tmp;
+}
+nav_msgs::Odometry computeOdometry(double linear_vel_x, double linear_vel_y, double angular_vel_z, double step_time)
+{
+    nav_msgs::Odometry odom;
+
+    tf::Transform odom_transform =
+            odom_transform * getTransformForMotion(
+                    linear_vel_x, linear_vel_y, angular_vel_z, step_time);
+    tf::poseTFToMsg(odom_transform, odom.pose.pose);
+
+    odom.twist.twist.linear.x  = linear_vel_x;
+    odom.twist.twist.linear.y  = linear_vel_y;
+    odom.twist.twist.angular.z = angular_vel_z;
+
+    odom.header.stamp = ros::Time::now();
+    odom.header.frame_id = "odom";
+    odom.child_frame_id = "base_footprint";
+
+    odom.pose.covariance[0] = 0.001;
+    odom.pose.covariance[7] = 0.001;
+    odom.pose.covariance[14] = 1000000000000.0;
+    odom.pose.covariance[21] = 1000000000000.0;
+    odom.pose.covariance[28] = 1000000000000.0;
+
+    if ( abs(angular_vel_z) < 0.0001 )
+    {
+        odom.pose.covariance[35] = 0.01;
+    }
+    else
+    {
+        odom.pose.covariance[35] = 100.0;
+    }
+
+    odom.twist.covariance[0] = 0.001;
+    odom.twist.covariance[7] = 0.001;
+    odom.twist.covariance[14] = 0.001;
+    odom.twist.covariance[21] = 1000000000000.0;
+    odom.twist.covariance[28] = 1000000000000.0;
+
+    if ( abs(angular_vel_z) < 0.0001 )
+    {
+        odom.twist.covariance[35] = 0.01;
+    }
+    else
+    {
+        odom.twist.covariance[35] = 100.0;
+    }
+
+    return odom;
+}
+
+
+
+
+
+
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "controller_pdo");
+    ros::init(argc, argv, "controller_odom_pdo");
     ros::NodeHandle n;
     string rtr;
     unsigned char buffer[4];
@@ -375,8 +478,15 @@ int main(int argc, char **argv)
     }
     //}
 
+    tf::Transform odom_transform;
+
+    odom_transform.setIdentity();
+
+    ros::Time last_odom_publish_time = ros::Time::now();
+
     ros::Subscriber sub = n.subscribe("input_msg", 1, commandCallback);
     ros::Publisher measure_pub = n.advertise<epos_tutorial::realVel>("measure", 1);
+    ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("wheel_encoder/odom", 10);
 //    ros::Publisher measure_p_pub = n.advertise<epos_tutorial::realVel>("measure_p", 1);
     ros::Rate loop_rate(100);
 
@@ -435,7 +545,28 @@ int main(int argc, char **argv)
 //            }
         }
 //        measure_p_pub.publish(msg_p);
+
+        ros::Time current_time = ros::Time::now();
+
+        double wheel_speed_lf = (double)  msg.realVel[0] * rpm_to_radps / gear_ratio;
+        double wheel_speed_rf = (double) -msg.realVel[1] * rpm_to_radps / gear_ratio;
+        double wheel_speed_lb = (double)  msg.realVel[2] * rpm_to_radps / gear_ratio;
+        double wheel_speed_rb = (double) -msg.realVel[3] * rpm_to_radps / gear_ratio;
+
+        double linear_vel_x =
+                wheel_radius/4.0*(wheel_speed_lf+wheel_speed_rf+wheel_speed_lb+wheel_speed_rb);
+        double linear_vel_y =
+                wheel_radius/4.0*(-wheel_speed_lf+wheel_speed_rf+wheel_speed_lb-wheel_speed_rb);
+        double angular_vel_z =
+                wheel_radius/(4.0*l)*(-wheel_speed_lf+wheel_speed_rf-wheel_speed_lb+wheel_speed_rb);
+
+        double step_time = current_time.toSec() - last_odom_publish_time.toSec();
+        last_odom_publish_time = current_time;
+
+        nav_msgs::Odometry odom_msg = computeOdometry(linear_vel_x, linear_vel_y, angular_vel_z, step_time);
+
         measure_pub.publish(msg);
+        odom_pub.publish(odom_msg);
 
         ros::spinOnce();
 //        ros::Time end = ros::Time::now();
