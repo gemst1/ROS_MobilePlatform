@@ -1,7 +1,7 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "epos_tutorial/realVel.h"
-#include "epos_tutorial/DesiredVel.h"
+#include "mobile_control/motorMsg.h"
 #include <sstream>
 
 #include <stdio.h>
@@ -36,11 +36,15 @@ int Id_length = sizeof(g_usNodeId)/sizeof(*g_usNodeId);
 // CAN Parameters
 int s;
 string Control_Enable = "0F00";
-unsigned short COB_ID_Rx[][4] = {{0x220, 0x320, 0x420, 0x520},
-                              {0x222, 0x322, 0x422, 0x522},
-                              {0x223, 0x323, 0x423, 0x523},
-                              {0x224, 0x324, 0x424, 0x524}};
-string COB_ID_Tx[][4] = {{"1A0", "2A0", "3A0", "4A0"},
+unsigned short COB_ID_Rx[][4] = {{0x221, 0x321, 0x421, 0x521},
+                                 {0x222, 0x322, 0x422, 0x522},
+                                 {0x223, 0x323, 0x423, 0x523},
+                                 {0x224, 0x324, 0x424, 0x524}};
+string COB_ID_Rx2[][4] = {{"221", "321", "421", "521"},
+                          {"222", "322", "422", "522"},
+                          {"223", "323", "423", "523"},
+                          {"224", "324", "424", "524"}};
+string COB_ID_Tx[][4] = {{"1A1", "2A1", "3A1", "4A1"},
                          {"1A2", "2A2", "3A2", "4A2"},
                          {"1A3", "2A3", "3A3", "4A3"},
                          {"1A4", "2A4", "3A4", "4A4"}};
@@ -190,15 +194,29 @@ std::string dec_to_hex(T dec, int NbofByte){
     return s_LH;
 }
 
-int hexarray_to_int(unsigned char *buffer){
-//    int length = sizeof(buffer)/ sizeof(*buffer);
-    int length = 4;
+//int *hexarray_to_int(unsigned char *buffer){
+////    int length = sizeof(buffer)/ sizeof(*buffer);
+//    int length = 4;
+//    int hextoint_1 = 0;
+//    int hextoint_2 = 0;
+//    static int hextoint[2];
+//    for (int i=0; i<length; i++)
+//    {
+//        hextoint_1 += (buffer[i] << 8*i);
+//        hextoint_2 += (buffer[i+4] << 8*i);
+//    }
+//    hextoint[0] = hextoint_1;
+//    hextoint[1] = hextoint_2;
+//
+//    return hextoint;
+//}
+
+int hexarray_to_int(unsigned char *buffer, int length){
     int hextoint = 0;
     for (int i=0; i<length; i++)
     {
         hextoint += (buffer[i] << 8*i);
     }
-
     return hextoint;
 }
 
@@ -211,17 +229,17 @@ std::string stringappend(string a, string b)
 }
 
 
-void commandCallback(const epos_tutorial::DesiredVel::ConstPtr& msg)
+void commandCallback(const mobile_control::motorMsg::ConstPtr& msg)
 {
     string data;
     struct can_frame frame;
     string vel_desired_hex[Id_length];
 
-    int setVel[] = {msg->vel1, msg->vel2, msg->vel3, msg->vel4};
-    ROS_INFO("Desired velocity (rpm) = %ld, %ld, %ld, %ld", (long int)setVel[0], (long int)setVel[1], (long int)setVel[2], (long int)setVel[3]);
+    int setVel[] = {msg->omega1, msg->omega2, msg->omega3, msg->omega4};
+    //ROS_INFO("Desired velocity (rpm) = %d, %d, %d, %d", setVel[0], setVel[1], setVel[2], setVel[3]);
 
-    stringstream ss;
-    ros::Time begin = ros::Time::now();
+    //stringstream ss;
+    //ros::Time begin = ros::Time::now();
 
     for (int i = 0; i < Id_length; i++) {
         // Convert dec to hex
@@ -232,11 +250,12 @@ void commandCallback(const epos_tutorial::DesiredVel::ConstPtr& msg)
         data = stringappend(Control_Enable, vel_desired_hex[i]);
         hexstring2data((char *) data.c_str(), frame.data, 8);
         write(s, &frame, sizeof(struct can_frame));
+        ros::Duration(0.00001).sleep();
     }
 
-    ros::Time finish = ros::Time::now();
-    ss << (finish-begin);
-    LogInfo(ss.str());
+    //ros::Time finish = ros::Time::now();
+    //ss << (finish-begin);
+    //LogInfo(ss.str());
 }
 
 int main(int argc, char **argv)
@@ -298,41 +317,56 @@ int main(int argc, char **argv)
     frame.data[1] = 0x00;
     write(s, &frame, sizeof(struct can_frame));
     LogInfo("Start Remote Node");
-    sleep(0.001);
+    sleep(1);
 
     // Velocity Control mode Initialize
+    //for (int j=1; j<3; j++){
     for (int i=0; i<Id_length; i++)
     {
+        //struct can_frame frame1;
         // Modes of operation (PVM)
+//        string st = stringappend(COB_ID_Rx2[i][1], "#000003");
+//        required_mtu = parse_canframe((char*)(st.c_str()), &frame_fd);
         frame.can_id  = COB_ID_Rx[i][1];
         frame.can_dlc = 3;
         frame.data[0] = 0x00;
         frame.data[1] = 0x00;
         frame.data[2] = 0x03;
+//        write(s, &frame_fd, required_mtu);
         write(s, &frame, sizeof(struct can_frame));
-        sleep(0.001);
+        LogInfo("Velocitiy mode initialized");
+        sleep(1);
 
         // Shutdown Controlword
-        frame.can_id  = COB_ID_Rx[i][0];
+        frame.can_id  = COB_ID_Rx[i][1];
         frame.can_dlc = 2;
         frame.data[0] = 0x06;
         frame.data[1] = 0x00;
         write(s, &frame, sizeof(struct can_frame));
-        sleep(0.001);
+//        string st = stringappend(COB_ID_Rx2[i][0], "#0600");
+//        required_mtu = parse_canframe((char*)(st.c_str()), &frame_fd);
+//        write(s, &frame_fd, required_mtu);
+        LogInfo("Shutdown controlword");
+        sleep(1);
 
         // Enable Controlword
-        frame.can_id  = COB_ID_Rx[i][0];
+        frame.can_id  = COB_ID_Rx[i][1];
         frame.can_dlc = 2;
         frame.data[0] = 0x0F;
         frame.data[1] = 0x00;
         write(s, &frame, sizeof(struct can_frame));
-        sleep(0.001);
+//        st = stringappend(COB_ID_Rx2[i][0], "#0F00");
+//        required_mtu = parse_canframe((char*)(st.c_str()), &frame_fd);
+//        write(s, &frame_fd, required_mtu);
+        LogInfo("Enable controlword");
+        sleep(1);
     }
+    //}
 
-    ros::Subscriber sub = n.subscribe("command", 1000, commandCallback);
-//    ros::spin();
-    ros::Publisher measure_pub = n.advertise<epos_tutorial::realVel>("measure", 1000);
-    ros::Rate loop_rate(100);
+    ros::Subscriber sub = n.subscribe("input_msg", 1, commandCallback);
+    ros::Publisher measure_pub = n.advertise<epos_tutorial::realVel>("measure", 1);
+//    ros::Publisher measure_p_pub = n.advertise<epos_tutorial::realVel>("measure_p", 1);
+    ros::Rate loop_rate(500);
 
     iov.iov_base = &frame_get;
     canmsg.msg_name = &addr;
@@ -344,25 +378,60 @@ int main(int argc, char **argv)
     canmsg.msg_namelen = sizeof(addr);
     canmsg.msg_controllen = sizeof(ctrlmsg);
     canmsg.msg_flags = 0;
+    sleep(1);
+
+    int nnbytes = 0;
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 50;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+    for (int i=0; i<3; i++)
+    {
+        recvmsg(s, &canmsg, 0);
+    }
+
+    epos_tutorial::realVel msg, msg_p;
+
+    ros::Time old = ros::Time::now();
 
     while (ros::ok())
     {
-        epos_tutorial::realVel msg;
-        for (int i=0; i<1;i++)
+        stringstream ss;
+        ros::Time begin = ros::Time::now();
+        //epos_tutorial::realVel msg;
+        for (int i=0; i<Id_length;i++)
         {
-            stringstream sss;
-            rtr = stringappend(COB_ID_Tx[i][3], "#R");
-            required_mtu = parse_canframe((char*)(rtr.c_str()), &frame_fd);
-            write(s, &frame_fd, required_mtu);
-            sleep(0.0001);
-            recvmsg(s, &canmsg, 0);
-            msg.realVel[i] = hexarray_to_int(frame_get.data);
-        }
 
+            //stringstream sss;
+//            rtr = stringappend(COB_ID_Tx[i][1], "#R");
+            //LogInfo("rtr ready");
+//            required_mtu = parse_canframe((char*)(rtr.c_str()), &frame_fd);
+            //LogInfo("rtr parse");
+//            write(s, &frame_fd, required_mtu);
+            //LogInfo("rtr write");
+            frame.can_id  = COB_ID_Rx[i][1] | CAN_RTR_FLAG;
+            write(s, &frame, sizeof(struct can_frame));
+            ros::Duration(0.00005).sleep();
+            nnbytes = recvmsg(s,&canmsg, 0);
+            msg.realVel[i] = hexarray_to_int(frame_get.data,4);
+//            if((size_t)nnbytes != CAN_MTU && (size_t)nnbytes != CANFD_MTU){}
+//            else{
+//                int *posvel = hexarray_to_int(frame_get.data);
+//                msg_p.realVel[i] = posvel[0];
+//                msg.realVel[i] = posvel[1];
+//            }
+        }
+//        measure_p_pub.publish(msg_p);
         measure_pub.publish(msg);
 
         ros::spinOnce();
-
+        ros::Time end = ros::Time::now();
+        if((end-old).toSec()>0.02){
+            ss<< (end-begin);
+            LogInfo(ss.str());
+        }
+        old = end;
         loop_rate.sleep();
     }
 
@@ -373,6 +442,7 @@ int main(int argc, char **argv)
     frame.data[1] = 0x00;
     write(s, &frame, sizeof(struct can_frame));
     LogInfo("Reset Remote Node");
+    sleep(2);
 
     // Stop Remote Node
     frame.can_id  = 0x000;
