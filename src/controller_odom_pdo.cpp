@@ -61,6 +61,7 @@ string COB_ID_Rx2[][4] = {{"221", "321", "421", "521"},
                          {"1A2", "2A2", "3A2", "4A2"},
                          {"1A3", "2A3", "3A3", "4A3"},
                          {"1A4", "2A4", "3A4", "4A4"}};*/
+int COB_ID_CHK[] = {673, 674, 675, 676}; // COB_ID_TX in DEC
 
 
 // platform param
@@ -536,7 +537,12 @@ int main(int argc, char **argv)
             write(s, &frame, sizeof(struct can_frame));
 //            ros::Duration(0.00005).sleep();
             nnbytes = recvmsg(s,&canmsg, 0);
+		if (frame_get.can_id == COB_ID_CHK[i])
+		{
             msg.realVel[i] = hexarray_to_int(frame_get.data,4);
+		ROS_INFO("%d", frame_get.can_id);
+		}
+//		ss << frame_get.can_id;
 //            if((size_t)nnbytes != CAN_MTU && (size_t)nnbytes != CANFD_MTU){}
 //            else{
 //                int *posvel = hexarray_to_int(frame_get.data);
